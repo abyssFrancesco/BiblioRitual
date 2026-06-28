@@ -1,66 +1,81 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import { supabase } from './supabase'
-import { useBooks } from './hooks/useBooks'
-import Sidebar from './components/Sidebar'
+import { useEffect, useState } from 'react'
+import { Routes, Route } from 'react-router-dom'
 import Home from './pages/Home'
+import Stats from './pages/Stats'
+import Sidebar from './components/Sidebar'
 import Login from './pages/Login'
+import { useBooks } from './hooks/useBooks'
+import { supabase } from './supabase'
 
-function App() {
-  const [session, setSession] = useState(null)
-  const [authLoading, setAuthLoading] = useState(true)
-  const [showSearch, setShowSearch] = useState(false)
-
-  const { books, addBook, removeBook, updateRating, updateStatus } = useBooks(session)
+export default function App() {
+  const [session, setSession] = useState(undefined)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      setAuthLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
     return () => subscription.unsubscribe()
   }, [])
 
-  const logout = () => {
-    supabase.auth.signOut()
-    localStorage.removeItem('biblioritual_books')
+  const signOut = async () => {
+    await supabase.auth.signOut({ scope: 'local' })
   }
 
-  if (authLoading) return (
-    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: 'var(--color-bg)' }}>
-      <p style={{ fontFamily: 'var(--font-serif)', fontSize: '18px',
-        color: 'var(--color-text-muted)' }}>Caricamento...</p>
-    </div>
-  )
+  const {
+    books,
+    loading,
+    refreshing,
+    addBook,
+    removeBook,
+    updateRating,
+    updateStatus,
+  } = useBooks(session)
 
-  if (!session) return <Login />
+  if (session === undefined) return null
+
+  if (!session) {
+    return <Login />
+  }
 
   return (
-    <BrowserRouter>
-      <div className="app-layout">
-        <Sidebar onLogout={logout} onAddBook={() => setShowSearch(true)} />
-        <main className="main-content">
-          <Routes>
-            <Route path="/" element={
+    <div className="app-layout">
+      <Sidebar onLogout={signOut} />
+
+      <main className="app-main">
+        <Routes>
+          <Route
+            path="/"
+            element={
               <Home
                 books={books}
+                loading={loading}
+                refreshing={refreshing}
                 addBook={addBook}
+                removeBook={removeBook}
                 updateRating={updateRating}
                 updateStatus={updateStatus}
-                removeBook={removeBook}
-                showSearch={showSearch}
-                setShowSearch={setShowSearch}
-                onAddBook={() => setShowSearch(true)}
               />
-            } />
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+            }
+          />
+
+          <Route
+            path="/stats"
+            element={
+              <Stats
+                books={books}
+                session={session}
+              />
+            }
+          />
+        </Routes>
+      </main>
+    </div>
   )
 }
-
-export default App
