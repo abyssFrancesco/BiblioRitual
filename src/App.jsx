@@ -36,13 +36,11 @@ export default function App() {
     removeBook,
     updateRating,
     updateStatus,
+    updateProgress,
   } = useBooks(session)
 
   if (session === undefined) return null
-
-  if (!session) {
-    return <Login />
-  }
+  if (!session) return <Login />
 
   return (
     <div className="app-layout">
@@ -51,29 +49,22 @@ export default function App() {
       <main className="app-main">
         <Routes>
           <Route
-            path="/"
-            element={
-              <Home
-                books={books}
-                loading={loading}
-                refreshing={refreshing}
-                addBook={addBook}
-                removeBook={removeBook}
-                updateRating={updateRating}
-                updateStatus={updateStatus}
-              />
-            }
-          />
-
-          <Route
-            path="/stats"
-            element={
-              <Stats
-                books={books}
-                session={session}
-              />
-            }
-          />
+  path="/"
+  element={
+    <Home
+      session={session}
+      books={books}
+      loading={loading}
+      refreshing={refreshing}
+      addBook={addBook}
+      removeBook={removeBook}
+      updateRating={updateRating}
+      updateStatus={updateStatus}
+      updateProgress={updateProgress}
+    />
+  }
+/>
+          <Route path="/stats" element={<Stats books={books} session={session} />} />
         </Routes>
       </main>
     </div>

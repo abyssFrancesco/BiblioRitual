@@ -4,9 +4,7 @@ import { supabase } from '../supabase'
 const CACHE_KEY = 'biblioritual_books'
 
 function saveToCache(books) {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(books))
-  } catch {}
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(books)) } catch {}
 }
 
 function loadFromCache() {
@@ -27,56 +25,57 @@ export function useBooks(session) {
     if (!session) {
       setBooks([])
       setLoading(false)
-      setRefreshing(false)
       return
     }
-    fetchBooks(true)
+    fetchBooks()
   }, [session])
 
-  const fetchBooks = async (initial = false) => {
-    if (initial) setLoading(true)
-    else setRefreshing(true)
+  const fetchBooks = async () => {
+    setRefreshing(true)
 
     const { data, error } = await supabase
       .from('books')
       .select('*')
       .order('added_at', { ascending: false })
 
-    if (!error && data) {
+    if (!error) {
       setBooks(data)
       saveToCache(data)
     }
 
-    if (initial) setLoading(false)
-    else setRefreshing(false)
+    setLoading(false)
+    setRefreshing(false)
   }
 
-  const addBook = async (book) => {
-    const payload = {
-      id: book.id,
-      title: book.title,
-      author: book.author,
-      description: book.description || '',
-      cover_id: book.coverId || null,
-      rating: 0,
-      status: 'toread',
-      year: book.year || null,
-      pages: book.pages || null,
-      genres: Array.isArray(book.genres) ? book.genres : [],
-    }
-
-    const { data, error } = await supabase
-      .from('books')
-      .insert([payload])
-      .select()
-
-    if (!error && data?.[0]) {
-      const updated = [data[0], ...books]
-      setBooks(updated)
-      saveToCache(updated)
-    }
+const addBook = async (book) => {
+  const payload = {
+    id: book.id,
+    title: book.title,
+    author: book.author,
+    description: book.description || '',
+    cover_id: book.coverId || null,
+    rating: 0,
+    status: 'toread',
+    year: book.year || null,
+    pages: book.pages || null,
+    genres: Array.isArray(book.genres) ? book.genres : [],
+    current_page: 0,
+    started_at: null,
+    finished_at: null,
+    shelves: [],
   }
 
+  const { data, error } = await supabase
+    .from('books')
+    .insert([payload])
+    .select()
+
+  if (!error && data?.[0]) {
+    const updated = [data[0], ...books]
+    setBooks(updated)
+    saveToCache(updated)
+  }
+}
   const removeBook = async (bookId) => {
     const { error } = await supabase
       .from('books')
@@ -90,31 +89,124 @@ export function useBooks(session) {
     }
   }
 
-  const updateRating = async (bookId, rating) => {
-    const { error } = await supabase
-      .from('books')
-      .update({ rating })
-      .eq('id', bookId)
+const updateRating = async (bookId, rating) => {
+  const numericRating = Number(rating) || 0
 
-    if (!error) {
-      const updated = books.map(b => b.id === bookId ? { ...b, rating } : b)
-      setBooks(updated)
-      saveToCache(updated)
-    }
+  const { error } = await supabase
+    .from('books')
+    .update({ rating: numericRating })
+    .eq('id', bookId)
+
+  if (!error) {
+    const updated = books.map(b =>
+      b.id === bookId ? { ...b, rating: numericRating } : b
+    )
+    setBooks(updated)
+    saveToCache(updated)
   }
+}
 
   const updateStatus = async (bookId, status) => {
-    const { error } = await supabase
-      .from('books')
-      .update({ status })
-      .eq('id', bookId)
+  const book = books.find(b => b.id === bookId)
+  if (!book) return
 
-    if (!error) {
-      const updated = books.map(b => b.id === bookId ? { ...b, status } : b)
-      setBooks(updated)
-      saveToCache(updated)
-    }
+  const patch = { status }
+  const today = new Date().toISOString().slice(0, 10)
+
+  if (status === 'reading') {
+    if (!book.started_at) patch.started_at = today
+    if (book.finished_at) patch.finished_at = null
   }
+
+  if (status === 'read') {
+    const totalPages = Number(book.pages) || 0
+
+    if (totalPages > 0) {
+      patch.current_page = totalPages
+    }
+
+    if (!book.started_at) patch.started_at = today
+    patch.finished_at = today
+  }
+
+  if (status === 'toread') {
+    patch.finished_at = null
+  }
+
+  if (status === 'dnf') {
+    patch.finished_at = null
+  }
+
+  const { error } = await supabase
+    .from('books')
+    .update(patch)
+    .eq('id', bookId)
+
+  if (!error) {
+    const updated = books.map(b =>
+      b.id === bookId ? { ...b, ...patch } : b
+    )
+    setBooks(updated)
+    saveToCache(updated)
+  }
+}
+
+ const updateProgress = async (bookId, currentPage) => {
+  const book = books.find(b => b.id === bookId)
+  if (!book) return
+
+  const totalPages = Number(book.pages) || 0
+  let safePage = Number(currentPage) || 0
+
+  if (safePage < 0) safePage = 0
+  if (totalPages > 0 && safePage > totalPages) safePage = totalPages
+
+  const patch = { current_page: safePage }
+  const today = new Date().toISOString().slice(0, 10)
+
+  if (totalPages > 0 && safePage >= totalPages) {
+    patch.status = 'read'
+    patch.current_page = totalPages
+    if (!book.started_at) patch.started_at = today
+    patch.finished_at = today
+  } else if (safePage > 0 && (book.status === 'toread' || book.status === 'dnf')) {
+    patch.status = 'reading'
+    if (!book.started_at) patch.started_at = today
+    if (book.finished_at) patch.finished_at = null
+  }
+
+  const { error } = await supabase
+    .from('books')
+    .update(patch)
+    .eq('id', bookId)
+
+  if (!error) {
+    const updated = books.map(b =>
+      b.id === bookId ? { ...b, ...patch } : b
+    )
+    setBooks(updated)
+    saveToCache(updated)
+  }
+}
+
+const updateShelves = async (bookId, shelves) => {
+  const cleanShelves = Array.isArray(shelves)
+    ? [...new Set(shelves.map(s => s.trim()).filter(Boolean))]
+    : []
+
+  const { error } = await supabase
+    .from('books')
+    .update({ shelves: cleanShelves })
+    .eq('id', bookId)
+
+  if (!error) {
+    const updated = books.map(b =>
+      b.id === bookId ? { ...b, shelves: cleanShelves } : b
+    )
+    setBooks(updated)
+    saveToCache(updated)
+  }
+}
 
   return {
     books,
@@ -124,6 +216,8 @@ export function useBooks(session) {
     removeBook,
     updateRating,
     updateStatus,
-    fetchBooks,
+    updateProgress,
+    updateShelves,
+
   }
 }

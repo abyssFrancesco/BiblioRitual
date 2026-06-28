@@ -1,16 +1,127 @@
 import { useEffect, useState } from 'react'
+import { useBookNotes } from '../hooks/useBookNotes'
 
 const STATUS_OPTIONS = [
   { value: 'toread', label: 'Da leggere', emoji: '📌' },
   { value: 'reading', label: 'In lettura', emoji: '📖' },
   { value: 'read', label: 'Letto', emoji: '✅' },
+  { value: 'dnf', label: 'Interrotto', emoji: '⛔' },
 ]
 
-export default function BookModal({ book, onClose, onRatingChange, onStatusChange, onRemove }) {
+function StarRating({ value = 0, onChange }) {
+  const [hoverValue, setHoverValue] = useState(null)
+  const activeValue = hoverValue ?? Number(value) ?? 0
+
+  const getStarFill = (starIndex) => {
+    const starValue = starIndex + 1
+    if (activeValue >= starValue) return 'full'
+    if (activeValue >= starValue - 0.5) return 'half'
+    return 'empty'
+  }
+
+  const handleMouseMove = (e, starIndex) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const isLeftHalf = e.clientX - rect.left < rect.width / 2
+    const nextValue = isLeftHalf ? starIndex + 0.5 : starIndex + 1
+    setHoverValue(nextValue)
+  }
+
+  const handleClick = (e, starIndex) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const isLeftHalf = e.clientX - rect.left < rect.width / 2
+    const nextValue = isLeftHalf ? starIndex + 0.5 : starIndex + 1
+    onChange(Number(value) === nextValue ? 0 : nextValue)
+  }
+
+  return (
+    <div
+      style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}
+      onMouseLeave={() => setHoverValue(null)}
+    >
+      <div style={{ display: 'flex', gap: '6px' }}>
+        {[0, 1, 2, 3, 4].map((starIndex) => {
+          const fill = getStarFill(starIndex)
+
+          return (
+            <button
+              key={starIndex}
+              type="button"
+              onMouseMove={(e) => handleMouseMove(e, starIndex)}
+              onClick={(e) => handleClick(e, starIndex)}
+              style={{
+                position: 'relative',
+                width: '30px',
+                height: '30px',
+                border: 'none',
+                background: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                fontSize: '30px',
+                lineHeight: 1,
+              }}
+            >
+              <span style={{ color: '#d8d2c8', position: 'absolute', inset: 0 }}>★</span>
+
+              {fill === 'full' && (
+                <span style={{ color: '#d4a017', position: 'absolute', inset: 0 }}>★</span>
+              )}
+
+              {fill === 'half' && (
+                <span
+                  style={{
+                    color: '#d4a017',
+                    position: 'absolute',
+                    inset: 0,
+                    width: '50%',
+                    overflow: 'hidden',
+                  }}
+                >
+                  ★
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      <span
+        style={{
+          fontSize: '13px',
+          fontWeight: '700',
+          color: 'var(--color-text-muted)',
+          minWidth: '42px',
+        }}
+      >
+        {activeValue ? activeValue.toFixed(1) : '0.0'}
+      </span>
+    </div>
+  )
+}
+
+export default function BookModal({
+  book,
+  session,
+  onClose,
+  onRatingChange,
+  onStatusChange,
+  onRemove,
+  onProgressChange,
+  onShelvesChange,
+}) {
   const [showFullDesc, setShowFullDesc] = useState(false)
+  const [pageInput, setPageInput] = useState('')
+  const [noteText, setNoteText] = useState('')
+  const [notePage, setNotePage] = useState('')
+  const [shelvesInput, setShelvesInput] = useState('')
+
+  const { notes, loading: notesLoading, addNote, removeNote } = useBookNotes(book?.id, session)
 
   useEffect(() => {
     setShowFullDesc(false)
+    setPageInput(book ? String(book.current_page || 0) : '')
+    setNoteText('')
+    setNotePage('')
+    setShelvesInput(Array.isArray(book?.shelves) ? book.shelves.join(', ') : '')
   }, [book])
 
   if (!book) return null
@@ -35,6 +146,31 @@ export default function BookModal({ book, onClose, onRatingChange, onStatusChang
     onRemove(book.id)
     onClose()
   }
+
+  const handleAddNote = async () => {
+    await addNote({
+      content: noteText,
+      page: notePage,
+    })
+
+    setNoteText('')
+    setNotePage('')
+  }
+
+  const handleSaveShelves = () => {
+    const nextShelves = shelvesInput
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+
+    onShelvesChange?.(book.id, nextShelves)
+  }
+
+  const totalPages = Number(book.pages) || 0
+  const currentPage = Number(book.current_page) || 0
+  const progressPercent = totalPages > 0
+    ? Math.min(100, Math.round((currentPage / totalPages) * 100))
+    : 0
 
   return (
     <>
@@ -102,7 +238,6 @@ export default function BookModal({ book, onClose, onRatingChange, onStatusChang
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                transition: 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1), background 260ms ease-out',
               }}
             >
               ✕
@@ -196,55 +331,20 @@ export default function BookModal({ book, onClose, onRatingChange, onStatusChang
 
           <div className="modal-body" style={{ overflowY: 'auto', padding: '28px', scrollbarWidth: 'none' }}>
             <div style={{ marginBottom: '24px' }}>
-              <p
-                style={{
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: 'var(--color-text-muted)',
-                  marginBottom: '10px',
-                }}
-              >
+              <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
                 Valutazione
               </p>
 
-              <div style={{ display: 'flex', gap: '6px' }}>
-                {[1, 2, 3, 4, 5].map(star => (
-                  <button
-                    key={star}
-                    onClick={() => onRatingChange(book.id, star === book.rating ? 0 : star)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '29px',
-                      padding: '2px',
-                      filter: star <= book.rating ? 'none' : 'grayscale(1) opacity(0.3)',
-                      transition: 'filter 260ms ease-out, transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.14)' }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
-                  >
-                    ⭐
-                  </button>
-                ))}
-              </div>
+              <StarRating
+                value={Number(book.rating) || 0}
+                onChange={(newValue) => onRatingChange(book.id, newValue)}
+              />
             </div>
 
             <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
 
             <div style={{ marginBottom: '24px' }}>
-              <p
-                style={{
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: 'var(--color-text-muted)',
-                  marginBottom: '10px',
-                }}
-              >
+              <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
                 Stato
               </p>
 
@@ -270,7 +370,6 @@ export default function BookModal({ book, onClose, onRatingChange, onStatusChang
                       fontSize: '12px',
                       fontWeight: '700',
                       cursor: 'pointer',
-                      transition: 'all 280ms cubic-bezier(0.22, 1, 0.36, 1)',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
@@ -284,21 +383,201 @@ export default function BookModal({ book, onClose, onRatingChange, onStatusChang
               </div>
             </div>
 
-            {(book.year || book.pages || (Array.isArray(book.genres) && book.genres.length > 0)) && (
+            {book.pages ? (
               <>
                 <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
 
                 <div style={{ marginBottom: '24px' }}>
-                  <p
+                  <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+                    Progresso lettura
+                  </p>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '14px', color: 'var(--color-text)' }}>
+                      {currentPage} / {book.pages} pagine
+                    </span>
+                    <span style={{ fontSize: '14px', color: 'var(--color-text-muted)', fontWeight: '700' }}>
+                      {progressPercent}%
+                    </span>
+                  </div>
+
+                  <div
                     style={{
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      letterSpacing: '0.1em',
-                      textTransform: 'uppercase',
-                      color: 'var(--color-text-muted)',
-                      marginBottom: '10px',
+                      width: '100%',
+                      height: '10px',
+                      borderRadius: '999px',
+                      background: 'var(--color-surface-high)',
+                      overflow: 'hidden',
+                      marginBottom: '14px',
                     }}
                   >
+                    <div
+                      style={{
+                        width: `${progressPercent}%`,
+                        height: '100%',
+                        borderRadius: '999px',
+                        background: 'linear-gradient(90deg, var(--color-primary), var(--color-primary-dark))',
+                        transition: 'width 280ms ease-out',
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <input
+                      type="number"
+                      min="0"
+                      max={book.pages}
+                      value={pageInput}
+                      onChange={(e) => setPageInput(e.target.value)}
+                      placeholder="Pagina corrente"
+                      className="input-field input-field-boxed"
+                      style={{ flex: '1 1 180px' }}
+                    />
+                    <button
+                      className="btn-primary"
+                      onClick={() => onProgressChange(book.id, pageInput)}
+                    >
+                      Salva progresso
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
+
+            <div style={{ marginBottom: '24px' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+                Scaffali
+              </p>
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                <input
+                  className="input-field input-field-boxed"
+                  value={shelvesInput}
+                  onChange={(e) => setShelvesInput(e.target.value)}
+                  placeholder="es. fantasy, preferiti, da comprare"
+                  style={{ flex: '1 1 220px' }}
+                />
+                <button className="btn-primary" onClick={handleSaveShelves}>
+                  Salva scaffali
+                </button>
+              </div>
+
+              {Array.isArray(book.shelves) && book.shelves.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {book.shelves.map((shelf, i) => (
+                    <span
+                      key={`${shelf}-${i}`}
+                      style={{
+                        background: 'var(--color-primary-light)',
+                        color: 'var(--color-primary)',
+                        borderRadius: '9999px',
+                        padding: '6px 10px',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        lineHeight: 1,
+                      }}
+                    >
+                      {shelf}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
+
+            <div style={{ marginBottom: '24px' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+                Note
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+                <textarea
+                  className="input-field input-field-boxed"
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Scrivi un pensiero, una riflessione o una citazione..."
+                  rows={4}
+                  style={{ resize: 'vertical', minHeight: '96px' }}
+                />
+
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    value={notePage}
+                    onChange={(e) => setNotePage(e.target.value)}
+                    placeholder="Pagina (opzionale)"
+                    className="input-field input-field-boxed"
+                    style={{ width: '180px' }}
+                  />
+                  <button className="btn-primary" onClick={handleAddNote}>
+                    Aggiungi nota
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {notesLoading ? (
+                  <p style={{ fontSize: '14px', color: 'var(--color-text-muted)' }}>
+                    Caricamento note...
+                  </p>
+                ) : notes.length === 0 ? (
+                  <p style={{ fontSize: '14px', color: 'var(--color-text-muted)' }}>
+                    Nessuna nota ancora per questo libro.
+                  </p>
+                ) : (
+                  notes.map((note) => (
+                    <div
+                      key={note.id}
+                      style={{
+                        border: '1px solid var(--color-outline-variant)',
+                        borderRadius: '14px',
+                        padding: '14px',
+                        background: 'var(--color-surface-2)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1 }}>
+                          {note.page && (
+                            <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--color-primary)', marginBottom: '8px' }}>
+                              Pagina {note.page}
+                            </p>
+                          )}
+
+                          <p style={{ fontSize: '14px', lineHeight: 1.7, color: 'var(--color-text)', whiteSpace: 'pre-wrap' }}>
+                            {note.content}
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => removeNote(note.id)}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: '#b85c5c',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: '700',
+                          }}
+                        >
+                          Elimina
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {(book.year || book.pages || book.started_at || book.finished_at || (Array.isArray(book.genres) && book.genres.length > 0)) && (
+              <>
+                <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
+
+                <div style={{ marginBottom: '24px' }}>
+                  <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
                     Dettagli
                   </p>
 
@@ -321,9 +600,27 @@ export default function BookModal({ book, onClose, onRatingChange, onStatusChang
                       </div>
                     )}
 
+                    {book.started_at && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Iniziato</span>
+                        <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: '600' }}>
+                          {book.started_at}
+                        </span>
+                      </div>
+                    )}
+
+                    {book.finished_at && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Finito</span>
+                        <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: '600' }}>
+                          {book.finished_at}
+                        </span>
+                      </div>
+                    )}
+
                     {Array.isArray(book.genres) && book.genres.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <span style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Genere</span>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Generi</span>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                           {book.genres.map((genre, i) => (
                             <span
@@ -354,26 +651,11 @@ export default function BookModal({ book, onClose, onRatingChange, onStatusChang
                 <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
 
                 <div style={{ marginBottom: '26px' }}>
-                  <p
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      letterSpacing: '0.1em',
-                      textTransform: 'uppercase',
-                      color: 'var(--color-text-muted)',
-                      marginBottom: '10px',
-                    }}
-                  >
+                  <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
                     Descrizione
                   </p>
 
-                  <p
-                    style={{
-                      fontSize: '15px',
-                      lineHeight: 1.8,
-                      color: 'var(--color-text)',
-                    }}
-                  >
+                  <p style={{ fontSize: '15px', lineHeight: 1.8, color: 'var(--color-text)' }}>
                     {showFullDesc ? book.description : shortDesc}
                   </p>
 
@@ -390,7 +672,6 @@ export default function BookModal({ book, onClose, onRatingChange, onStatusChang
                         marginTop: '10px',
                         padding: 0,
                         fontFamily: 'var(--font-sans)',
-                        transition: 'color 220ms ease-out, transform 220ms ease-out',
                       }}
                     >
                       {showFullDesc ? '↑ Mostra meno' : 'Leggi tutto →'}
@@ -413,15 +694,6 @@ export default function BookModal({ book, onClose, onRatingChange, onStatusChang
                 fontSize: '13px',
                 fontWeight: '700',
                 cursor: 'pointer',
-                transition: 'background 280ms ease-out, transform 280ms cubic-bezier(0.22, 1, 0.36, 1)',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = '#fff5f5'
-                e.currentTarget.style.transform = 'translateY(-1px)'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'transparent'
-                e.currentTarget.style.transform = 'translateY(0)'
               }}
             >
               🗑 Rimuovi dalla libreria

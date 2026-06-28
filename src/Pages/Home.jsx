@@ -136,12 +136,15 @@ const STATUS_LABELS = {
 }
 
 export default function Home({
+  session,
   books,
   loading,
   refreshing,
   addBook,
   updateRating,
   updateStatus,
+  updateProgress,
+  updateShelves,
   removeBook,
 }) {
   const [query, setQuery] = useState('')
@@ -331,19 +334,43 @@ export default function Home({
       {!loading && <BooksRow title="Da leggere" items={toread} onBookClick={setSelectedBook} />}
       {!loading && <BooksRow title="Letti" items={read} onBookClick={setSelectedBook} />}
 
-      <BookModal
-        book={selectedBook}
-        onClose={() => setSelectedBook(null)}
-        onRatingChange={(id, r) => {
-          updateRating(id, r)
-          setSelectedBook((prev) => ({ ...prev, rating: r }))
-        }}
-        onStatusChange={(id, s) => {
-          updateStatus(id, s)
-          setSelectedBook((prev) => ({ ...prev, status: s }))
-        }}
-        onRemove={removeBook}
-      />
+<BookModal
+  book={selectedBook}
+  session={session}
+  onClose={() => setSelectedBook(null)}
+  onRatingChange={(id, r) => {
+    updateRating(id, r)
+    setSelectedBook(prev => ({ ...prev, rating: r }))
+  }}
+  onStatusChange={(id, s) => {
+    updateStatus(id, s)
+    setSelectedBook(prev => ({ ...prev, status: s }))
+  }}
+  onRemove={removeBook}
+  onProgressChange={(id, page) => {
+    updateProgress(id, page)
+
+    const currentBook = books.find(b => b.id === id)
+    const totalPages = Number(currentBook?.pages) || 0
+    let safePage = Number(page) || 0
+
+    if (safePage < 0) safePage = 0
+    if (totalPages > 0 && safePage > totalPages) safePage = totalPages
+
+    const nextStatus =
+      totalPages > 0 && safePage >= totalPages
+        ? 'read'
+        : safePage > 0 && (selectedBook?.status === 'toread' || selectedBook?.status === 'dnf')
+          ? 'reading'
+          : selectedBook?.status
+
+    setSelectedBook(prev => ({
+      ...prev,
+      current_page: safePage,
+      status: nextStatus,
+    }))
+  }}
+/>
 
       {showSearch && (
         <div className="modal-overlay" onClick={closeSearch} style={{ alignItems: 'center', padding: '20px' }}>

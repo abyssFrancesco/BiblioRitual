@@ -82,12 +82,21 @@ export default function Stats({ books = [], session }) {
   const readBooks = books.filter((b) => b.status === 'read')
   const readingBooks = books.filter((b) => b.status === 'reading')
   const toreadBooks = books.filter((b) => b.status === 'toread')
+  const dnfBooks = books.filter((b) => b.status === 'dnf')
 
   const readCount = readBooks.length
   const readingCount = readingBooks.length
   const toreadCount = toreadBooks.length
+  const dnfCount = dnfBooks.length
 
   const pagesTotal = books.reduce((sum, b) => sum + (Number(b.pages) || 0), 0)
+
+  const pagesRead = books.reduce((sum, b) => {
+    const current = Number(b.current_page) || 0
+    const totalPages = Number(b.pages) || 0
+    if (totalPages > 0) return sum + Math.min(current, totalPages)
+    return sum
+  }, 0)
 
   const ratedBooks = books.filter((b) => Number(b.rating) > 0)
   const avgRating = ratedBooks.length
@@ -107,10 +116,17 @@ export default function Stats({ books = [], session }) {
   const topGenre =
     Object.entries(genreCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '—'
 
-  const avgYearBooks = books.filter((b) => Number(b.year))
-  const avgYear = avgYearBooks.length
-    ? Math.round(avgYearBooks.reduce((sum, b) => sum + Number(b.year), 0) / avgYearBooks.length)
-    : '—'
+  const readingWithPages = books.filter(
+    (b) => b.status === 'reading' && Number(b.pages) > 0
+  )
+
+  const avgReadingProgress = readingWithPages.length
+    ? Math.round(
+        readingWithPages.reduce((sum, b) => {
+          return sum + ((Number(b.current_page) || 0) / Number(b.pages)) * 100
+        }, 0) / readingWithPages.length
+      )
+    : 0
 
   const goalProgress = useMemo(() => {
     if (!yearGoal || yearGoal <= 0) return 0
@@ -124,7 +140,6 @@ export default function Stats({ books = [], session }) {
 
   const saveGoal = async () => {
     const parsed = Number(goalInput)
-
     if (!parsed || parsed <= 0 || !session?.user?.id) return
 
     setGoalSaving(true)
@@ -132,10 +147,7 @@ export default function Stats({ books = [], session }) {
     const { error } = await supabase
       .from('reading_goals')
       .upsert(
-        {
-          user_id: session.user.id,
-          year_goal: parsed,
-        },
+        { user_id: session.user.id, year_goal: parsed },
         { onConflict: 'user_id' }
       )
 
@@ -188,7 +200,7 @@ export default function Stats({ books = [], session }) {
             gap: '16px',
             flexWrap: 'wrap',
             marginBottom: '16px',
-            alignItems: 'end',
+            alignItems: 'flex-end',
           }}
         >
           <div>
@@ -219,12 +231,13 @@ export default function Stats({ books = [], session }) {
 
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <input
-              className="input-field input-field-boxed goal-input"
+              className="input-field input-field-boxed"
               type="number"
               min="1"
               value={goalInput}
               onChange={(e) => setGoalInput(e.target.value)}
               placeholder="Inserisci goal"
+              style={{ width: '160px' }}
             />
             <button
               className="btn-primary"
@@ -260,14 +273,14 @@ export default function Stats({ books = [], session }) {
             </div>
 
             <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-              {remainingBooks > 0
-                ? `Ti mancano ${remainingBooks} ${remainingBooks === 1 ? 'libro' : 'libri'} da leggere per completare il goal.`
-                : 'Hai raggiunto il tuo obiettivo annuale.'}
+              {goalProgress >= 100
+                ? '🎉 Hai raggiunto il tuo obiettivo annuale!'
+                : `Ti mancano ${remainingBooks} ${remainingBooks === 1 ? 'libro' : 'libri'} per completare il goal. Sei al ${goalProgress}%.`}
             </p>
           </>
         ) : (
           <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            Inserisci tu il numero di libri che vuoi leggere quest’anno.
+            Inserisci quanti libri vuoi leggere quest'anno per tracciare il tuo progresso.
           </p>
         )}
       </div>
@@ -276,14 +289,21 @@ export default function Stats({ books = [], session }) {
         <StatCard label="Libri totali" value={total} hint="Tutti i libri salvati" accent />
         <StatCard label="Letti" value={readCount} hint={`${completionRate}% completati`} />
         <StatCard label="In lettura" value={readingCount} hint="Attualmente aperti" />
-        <StatCard label="Da leggere" value={toreadCount} hint="In lista d’attesa" />
+        <StatCard label="Interrotti" value={dnfCount} hint="DNF separati dai completati" />
+      </div>
+
+      <div className="stats-grid" style={{ marginBottom: '16px' }}>
+        <StatCard label="Da leggere" value={toreadCount} hint="In lista d'attesa" />
+        <StatCard label="Pagine totali" value={pagesTotal || '—'} hint="Somma stimata libreria" />
+        <StatCard label="Pagine lette" value={pagesRead || 0} hint="Da current_page" />
+        <StatCard label="Rating medio" value={avgRating} hint="Supporta mezze stelle" />
       </div>
 
       <div className="stats-grid" style={{ marginBottom: '28px' }}>
-        <StatCard label="Pagine totali" value={pagesTotal || '—'} hint="Somma stimata libreria" />
-        <StatCard label="Rating medio" value={avgRating} hint="Solo libri valutati" />
-        <StatCard label="Genere top" value={topGenre} hint="Il più ricorrente" />
-        <StatCard label="Anno medio" value={avgYear} hint="Media pubblicazione" />
+        <StatCard label="Genere top" value={topGenre} hint="Il più ricorrente in libreria" />
+        <StatCard label="Avanzamento medio" value={`${avgReadingProgress}%`} hint="Solo libri in lettura" />
+        <StatCard label="Goal completato" value={`${goalProgress}%`} hint="Sul goal annuale" />
+        <StatCard label="Libri mancanti" value={remainingBooks ?? '—'} hint="Per chiudere il goal" />
       </div>
 
       <div className="card" style={{ padding: '22px' }}>
@@ -294,24 +314,50 @@ export default function Stats({ books = [], session }) {
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
             color: 'var(--color-text-muted)',
-            marginBottom: '10px',
+            marginBottom: '14px',
           }}
         >
           Insight
         </p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <p style={{ fontSize: '14px', color: 'var(--color-text)' }}>
-            Hai completato <strong>{readCount}</strong> libri su <strong>{total}</strong>.
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--color-text)' }}>
+            Hai completato <strong>{readCount}</strong> {readCount === 1 ? 'libro' : 'libri'} su <strong>{total}</strong> in libreria.
           </p>
 
-          <p style={{ fontSize: '14px', color: 'var(--color-text)' }}>
-            Il tuo genere più presente è <strong>{topGenre}</strong>.
+          <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--color-text)' }}>
+            Hai letto circa <strong>{pagesRead.toLocaleString('it-IT')}</strong> {pagesRead === 1 ? 'pagina' : 'pagine'} in totale.
           </p>
 
-          <p style={{ fontSize: '14px', color: 'var(--color-text)' }}>
-            La tua libreria contiene circa <strong>{pagesTotal || 0}</strong> pagine in totale.
-          </p>
+          {readingCount > 0 && (
+            <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--color-text)' }}>
+              I {readingCount} {readingCount === 1 ? 'libro' : 'libri'} in lettura {readingCount === 1 ? 'è completato' : 'sono completati'} in media al <strong>{avgReadingProgress}%</strong>.
+            </p>
+          )}
+
+          {dnfCount > 0 && (
+            <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--color-text)' }}>
+              Hai interrotto <strong>{dnfCount}</strong> {dnfCount === 1 ? 'libro' : 'libri'}, ma le pagine già lette restano conteggiate.
+            </p>
+          )}
+
+          {topGenre !== '—' && (
+            <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--color-text)' }}>
+              Il tuo genere più presente è <strong>{topGenre}</strong>.
+            </p>
+          )}
+
+          {avgRating !== '—' && (
+            <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--color-text)' }}>
+              Il tuo rating medio è <strong>{avgRating}</strong> su <strong>{ratedBooks.length}</strong> {ratedBooks.length === 1 ? 'libro valutato' : 'libri valutati'}.
+            </p>
+          )}
+
+          {total === 0 && (
+            <p style={{ fontSize: '14px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+              Aggiungi il tuo primo libro per iniziare a vedere i tuoi dati.
+            </p>
+          )}
         </div>
       </div>
     </div>
