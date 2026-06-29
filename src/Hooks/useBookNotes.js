@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
 
-export function useBookNotes(bookId, session) {
+export function useBookNotes(bookId, session, bookMeta = null) {
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(false)
 
@@ -50,7 +50,19 @@ export function useBookNotes(bookId, session) {
       .select()
 
     if (!error && data?.[0]) {
-      setNotes(prev => [data[0], ...prev])
+      const inserted = data[0]
+      setNotes((prev) => [inserted, ...prev])
+
+      await supabase.from('activity_events').insert({
+        user_id: session.user.id,
+        book_id: bookId,
+        event_type: 'note_added',
+        payload: {
+          title: bookMeta?.title ?? null,
+          author: bookMeta?.author ?? null,
+          page: inserted.page ?? null,
+        },
+      })
     }
   }
 
@@ -61,7 +73,7 @@ export function useBookNotes(bookId, session) {
       .eq('id', noteId)
 
     if (!error) {
-      setNotes(prev => prev.filter(note => note.id !== noteId))
+      setNotes((prev) => prev.filter((note) => note.id !== noteId))
     }
   }
 

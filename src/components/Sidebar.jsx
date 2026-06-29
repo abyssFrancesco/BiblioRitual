@@ -74,6 +74,20 @@ export default function Sidebar({ onLogout }) {
               >
                 Stats
               </button>
+
+              <button
+                className={`mobile-menu-link ${location.pathname === '/discover' ? 'active' : ''}`}
+                onClick={() => goTo('/discover')}
+              >
+                Discover
+              </button>
+
+              <button
+                className={`mobile-menu-link ${location.pathname === '/settings' ? 'active' : ''}`}
+                onClick={() => goTo('/settings')}
+              >
+                Settings
+              </button>
             </div>
 
             <div className="mobile-menu-bottom">
@@ -132,7 +146,7 @@ export default function Sidebar({ onLogout }) {
         >
           <button
             className={`btn-ghost ${location.pathname === '/' ? 'active' : ''}`}
-            onClick={() => navigate('/')}
+            onClick={() => goTo('/')}
           >
             <span style={{ fontSize: '18px' }}>📚</span>
             My Library
@@ -140,10 +154,26 @@ export default function Sidebar({ onLogout }) {
 
           <button
             className={`btn-ghost ${location.pathname === '/stats' ? 'active' : ''}`}
-            onClick={() => navigate('/stats')}
+            onClick={() => goTo('/stats')}
           >
             <span style={{ fontSize: '18px' }}>📊</span>
             Stats
+          </button>
+
+          <button
+            className={`btn-ghost ${location.pathname === '/discover' ? 'active' : ''}`}
+            onClick={() => goTo('/discover')}
+          >
+            <span style={{ fontSize: '18px' }}>✨</span>
+            Discover
+          </button>
+
+          <button
+            className={`btn-ghost ${location.pathname === '/settings' ? 'active' : ''}`}
+            onClick={() => goTo('/settings')}
+          >
+            <span style={{ fontSize: '18px' }}>⚙️</span>
+            Settings
           </button>
         </nav>
 

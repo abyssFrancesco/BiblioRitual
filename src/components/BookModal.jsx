@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useBookNotes } from '../hooks/useBookNotes'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 const STATUS_OPTIONS = [
   { value: 'toread', label: 'Da leggere', emoji: '📌' },
@@ -35,10 +36,10 @@ function StarRating({ value = 0, onChange }) {
 
   return (
     <div
-      style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}
       onMouseLeave={() => setHoverValue(null)}
     >
-      <div style={{ display: 'flex', gap: '6px' }}>
+      <div style={{ display: 'flex', gap: 6 }}>
         {[0, 1, 2, 3, 4].map((starIndex) => {
           const fill = getStarFill(starIndex)
 
@@ -50,13 +51,13 @@ function StarRating({ value = 0, onChange }) {
               onClick={(e) => handleClick(e, starIndex)}
               style={{
                 position: 'relative',
-                width: '30px',
-                height: '30px',
+                width: 30,
+                height: 30,
                 border: 'none',
                 background: 'none',
                 padding: 0,
                 cursor: 'pointer',
-                fontSize: '30px',
+                fontSize: 30,
                 lineHeight: 1,
               }}
             >
@@ -86,10 +87,10 @@ function StarRating({ value = 0, onChange }) {
 
       <span
         style={{
-          fontSize: '13px',
-          fontWeight: '700',
+          fontSize: 13,
+          fontWeight: 700,
           color: 'var(--color-text-muted)',
-          minWidth: '42px',
+          minWidth: 42,
         }}
       >
         {activeValue ? activeValue.toFixed(1) : '0.0'}
@@ -101,85 +102,102 @@ function StarRating({ value = 0, onChange }) {
 export default function BookModal({
   book,
   session,
+  preferences,
   onClose,
   onRatingChange,
   onStatusChange,
   onRemove,
   onProgressChange,
-  onShelvesChange,
 }) {
   const [showFullDesc, setShowFullDesc] = useState(false)
   const [pageInput, setPageInput] = useState('')
   const [noteText, setNoteText] = useState('')
   const [notePage, setNotePage] = useState('')
-  const [shelvesInput, setShelvesInput] = useState('')
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
 
-  const { notes, loading: notesLoading, addNote, removeNote } = useBookNotes(book?.id, session)
+  const {
+    notes,
+    loading: notesLoading,
+    addNote,
+    removeNote,
+  } = useBookNotes(book?.id, session, book)
 
   useEffect(() => {
     setShowFullDesc(false)
-    setPageInput(book ? String(book.current_page || 0) : '')
+    setPageInput(book ? String(book.current_page ?? book.currentpage ?? 0) : '')
     setNoteText('')
     setNotePage('')
-    setShelvesInput(Array.isArray(book?.shelves) ? book.shelves.join(', ') : '')
+    setShowRemoveConfirm(false)
   }, [book])
 
   if (!book) return null
 
   const coverId = book.cover_id || book.coverId
-
-  const cover = coverId
-    ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg`
-    : null
+  const cover = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : null
 
   const getShortDesc = (text) => {
     if (!text || text.length <= 220) return text
     const cut = text.slice(0, 220)
     const lastDot = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('!'), cut.lastIndexOf('?'))
-    return lastDot > 80 ? cut.slice(0, lastDot + 1) : cut + '...'
+    return lastDot > 80 ? cut.slice(0, lastDot + 1) : `${cut}...`
   }
 
   const shortDesc = getShortDesc(book.description)
-  const hasMore = book.description && book.description.length > shortDesc?.length
+  const hasMore = book.description && book.description.length > (shortDesc?.length || 0)
 
-  const handleRemove = () => {
-    onRemove(book.id)
-    onClose()
+  const totalPages = Number(book.pages) || 0
+  const currentPage = Number(book.current_page ?? book.currentpage) || 0
+  const progressPercent =
+    totalPages > 0 ? Math.min(100, Math.round((currentPage / totalPages) * 100)) : 0
+
+  const startedAt = book.started_at ?? book.startedat ?? null
+  const finishedAt = book.finished_at ?? book.finishedat ?? null
+
+  const handleProgressSave = async () => {
+    await onProgressChange(book.id, pageInput)
   }
 
   const handleAddNote = async () => {
-    await addNote({
-      content: noteText,
-      page: notePage,
-    })
-
+    await addNote({ content: noteText, page: notePage })
     setNoteText('')
     setNotePage('')
   }
 
-  const handleSaveShelves = () => {
-    const nextShelves = shelvesInput
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
+  const handleAskRemove = () => {
+    const shouldConfirm = preferences?.confirm_before_remove ?? true
 
-    onShelvesChange?.(book.id, nextShelves)
+    if (!shouldConfirm) {
+      onRemove(book.id)
+      onClose()
+      return
+    }
+
+    setShowRemoveConfirm(true)
   }
 
-  const totalPages = Number(book.pages) || 0
-  const currentPage = Number(book.current_page) || 0
-  const progressPercent = totalPages > 0
-    ? Math.min(100, Math.round((currentPage / totalPages) * 100))
-    : 0
+  const confirmRemove = () => {
+    setShowRemoveConfirm(false)
+    onRemove(book.id)
+    onClose()
+  }
 
   return (
     <>
       <style>{`
         @keyframes slideUpPremium {
-          from { transform: translateY(40px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
+          from {
+            transform: translateY(40px);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
         }
-        .modal-body::-webkit-scrollbar { display: none; }
+
+        .modal-body::-webkit-scrollbar {
+          display: none;
+        }
       `}</style>
 
       <div
@@ -193,7 +211,7 @@ export default function BookModal({
         }}
       >
         <div
-          onClick={e => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
           style={{
             background: 'var(--color-surface)',
             borderRadius: '28px 28px 0 0',
@@ -211,29 +229,29 @@ export default function BookModal({
           <div
             style={{
               width: '100%',
-              height: '270px',
+              height: 270,
               background: 'linear-gradient(135deg, #1f4b33 0%, #2d5a3d 70%, #3a7a52 100%)',
               position: 'relative',
               flexShrink: 0,
               display: 'flex',
               alignItems: 'flex-end',
-              padding: '24px',
-              gap: '20px',
+              padding: 24,
+              gap: 20,
             }}
           >
             <button
               onClick={onClose}
               style={{
                 position: 'absolute',
-                top: '16px',
-                right: '16px',
-                width: '34px',
-                height: '34px',
+                top: 16,
+                right: 16,
+                width: 34,
+                height: 34,
                 borderRadius: '9999px',
                 background: 'rgba(0,0,0,0.26)',
                 border: 'none',
                 color: 'white',
-                fontSize: '16px',
+                fontSize: 16,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -245,10 +263,10 @@ export default function BookModal({
 
             <div
               style={{
-                width: '108px',
-                minWidth: '108px',
-                height: '158px',
-                borderRadius: '12px',
+                width: 108,
+                minWidth: 108,
+                height: 158,
+                borderRadius: 12,
                 overflow: 'hidden',
                 boxShadow: '0 12px 30px rgba(0,0,0,0.38)',
                 background: 'rgba(255,255,255,0.1)',
@@ -274,7 +292,7 @@ export default function BookModal({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '40px',
+                    fontSize: 40,
                   }}
                 >
                   📖
@@ -282,28 +300,29 @@ export default function BookModal({
               )}
             </div>
 
-            <div style={{ paddingBottom: '6px', flex: 1, minWidth: 0 }}>
+            <div style={{ paddingBottom: 6, flex: 1, minWidth: 0 }}>
               <p
                 style={{
-                  fontSize: '11px',
-                  fontWeight: '700',
+                  fontSize: 11,
+                  fontWeight: 700,
                   letterSpacing: '0.1em',
                   textTransform: 'uppercase',
                   color: 'rgba(255,255,255,0.56)',
-                  marginBottom: '8px',
+                  marginBottom: 8,
                 }}
               >
-                {STATUS_OPTIONS.find(o => o.value === book.status)?.emoji} {STATUS_OPTIONS.find(o => o.value === book.status)?.label}
+                {STATUS_OPTIONS.find((o) => o.value === book.status)?.emoji}{' '}
+                {STATUS_OPTIONS.find((o) => o.value === book.status)?.label}
               </p>
 
               <h2
                 style={{
                   fontFamily: 'var(--font-serif)',
-                  fontSize: '28px',
-                  fontWeight: '700',
+                  fontSize: 28,
+                  fontWeight: 700,
                   color: '#fff',
                   lineHeight: 1.22,
-                  marginBottom: '8px',
+                  marginBottom: 8,
                   overflow: 'hidden',
                   display: '-webkit-box',
                   WebkitLineClamp: 3,
@@ -316,7 +335,7 @@ export default function BookModal({
               <p
                 style={{
                   fontFamily: 'var(--font-serif)',
-                  fontSize: '14px',
+                  fontSize: 14,
                   fontStyle: 'italic',
                   color: 'rgba(255,255,255,0.72)',
                   whiteSpace: 'nowrap',
@@ -329,9 +348,25 @@ export default function BookModal({
             </div>
           </div>
 
-          <div className="modal-body" style={{ overflowY: 'auto', padding: '28px', scrollbarWidth: 'none' }}>
-            <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+          <div
+            className="modal-body"
+            style={{
+              overflowY: 'auto',
+              padding: 28,
+              scrollbarWidth: 'none',
+            }}
+          >
+            <div style={{ marginBottom: 24 }}>
+              <p
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: 'var(--color-text-muted)',
+                  marginBottom: 10,
+                }}
+              >
                 Valutazione
               </p>
 
@@ -341,42 +376,60 @@ export default function BookModal({
               />
             </div>
 
-            <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
+            <hr
+              style={{
+                border: 'none',
+                borderTop: '1px solid var(--color-outline-variant)',
+                marginBottom: 24,
+              }}
+            />
 
-            <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+            <div style={{ marginBottom: 24 }}>
+              <p
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: 'var(--color-text-muted)',
+                  marginBottom: 10,
+                }}
+              >
                 Stato
               </p>
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {STATUS_OPTIONS.map(opt => (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {STATUS_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => onStatusChange(book.id, opt.value)}
                     style={{
                       flex: '1 1 120px',
                       padding: '12px 10px',
-                      borderRadius: '12px',
-                      border: book.status === opt.value
-                        ? '2px solid var(--color-primary)'
-                        : '1.5px solid var(--color-outline-variant)',
-                      background: book.status === opt.value
-                        ? 'var(--color-primary-light)'
-                        : 'transparent',
-                      color: book.status === opt.value
-                        ? 'var(--color-primary)'
-                        : 'var(--color-text-muted)',
+                      borderRadius: 12,
+                      border:
+                        book.status === opt.value
+                          ? '2px solid var(--color-primary)'
+                          : '1.5px solid var(--color-outline-variant)',
+                      background:
+                        book.status === opt.value
+                          ? 'var(--color-primary-light)'
+                          : 'transparent',
+                      color:
+                        book.status === opt.value
+                          ? 'var(--color-primary)'
+                          : 'var(--color-text-muted)',
                       fontFamily: 'var(--font-sans)',
-                      fontSize: '12px',
-                      fontWeight: '700',
+                      fontSize: 12,
+                      fontWeight: 700,
                       cursor: 'pointer',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '4px',
+                      gap: 4,
                     }}
                   >
-                    <span style={{ fontSize: '18px' }}>{opt.emoji}</span>
+                    <span style={{ fontSize: 18 }}>{opt.emoji}</span>
                     {opt.label}
                   </button>
                 ))}
@@ -385,18 +438,48 @@ export default function BookModal({
 
             {book.pages ? (
               <>
-                <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
+                <hr
+                  style={{
+                    border: 'none',
+                    borderTop: '1px solid var(--color-outline-variant)',
+                    marginBottom: 24,
+                  }}
+                />
 
-                <div style={{ marginBottom: '24px' }}>
-                  <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+                <div style={{ marginBottom: 24 }}>
+                  <p
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      color: 'var(--color-text-muted)',
+                      marginBottom: 10,
+                    }}
+                  >
                     Progresso lettura
                   </p>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '14px', color: 'var(--color-text)' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      marginBottom: 10,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span style={{ fontSize: 14, color: 'var(--color-text)' }}>
                       {currentPage} / {book.pages} pagine
                     </span>
-                    <span style={{ fontSize: '14px', color: 'var(--color-text-muted)', fontWeight: '700' }}>
+
+                    <span
+                      style={{
+                        fontSize: 14,
+                        color: 'var(--color-text-muted)',
+                        fontWeight: 700,
+                      }}
+                    >
                       {progressPercent}%
                     </span>
                   </div>
@@ -404,25 +487,26 @@ export default function BookModal({
                   <div
                     style={{
                       width: '100%',
-                      height: '10px',
-                      borderRadius: '999px',
+                      height: 10,
+                      borderRadius: 999,
                       background: 'var(--color-surface-high)',
                       overflow: 'hidden',
-                      marginBottom: '14px',
+                      marginBottom: 14,
                     }}
                   >
                     <div
                       style={{
                         width: `${progressPercent}%`,
                         height: '100%',
-                        borderRadius: '999px',
-                        background: 'linear-gradient(90deg, var(--color-primary), var(--color-primary-dark))',
+                        borderRadius: 999,
+                        background:
+                          'linear-gradient(90deg, var(--color-primary), var(--color-primary-dark))',
                         transition: 'width 280ms ease-out',
                       }}
                     />
                   </div>
 
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     <input
                       type="number"
                       min="0"
@@ -433,9 +517,10 @@ export default function BookModal({
                       className="input-field input-field-boxed"
                       style={{ flex: '1 1 180px' }}
                     />
+
                     <button
                       className="btn-primary"
-                      onClick={() => onProgressChange(book.id, pageInput)}
+                      onClick={handleProgressSave}
                     >
                       Salva progresso
                     </button>
@@ -444,74 +529,47 @@ export default function BookModal({
               </>
             ) : null}
 
-            <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
+            <hr
+              style={{
+                border: 'none',
+                borderTop: '1px solid var(--color-outline-variant)',
+                marginBottom: 24,
+              }}
+            />
 
-            <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
-                Scaffali
-              </p>
-
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                <input
-                  className="input-field input-field-boxed"
-                  value={shelvesInput}
-                  onChange={(e) => setShelvesInput(e.target.value)}
-                  placeholder="es. fantasy, preferiti, da comprare"
-                  style={{ flex: '1 1 220px' }}
-                />
-                <button className="btn-primary" onClick={handleSaveShelves}>
-                  Salva scaffali
-                </button>
-              </div>
-
-              {Array.isArray(book.shelves) && book.shelves.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {book.shelves.map((shelf, i) => (
-                    <span
-                      key={`${shelf}-${i}`}
-                      style={{
-                        background: 'var(--color-primary-light)',
-                        color: 'var(--color-primary)',
-                        borderRadius: '9999px',
-                        padding: '6px 10px',
-                        fontSize: '12px',
-                        fontWeight: '700',
-                        lineHeight: 1,
-                      }}
-                    >
-                      {shelf}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
-
-            <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+            <div style={{ marginBottom: 24 }}>
+              <p
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: 'var(--color-text-muted)',
+                  marginBottom: 10,
+                }}
+              >
                 Note
               </p>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
                 <textarea
                   className="input-field input-field-boxed"
                   value={noteText}
                   onChange={(e) => setNoteText(e.target.value)}
                   placeholder="Scrivi un pensiero, una riflessione o una citazione..."
                   rows={4}
-                  style={{ resize: 'vertical', minHeight: '96px' }}
+                  style={{ resize: 'vertical', minHeight: 96 }}
                 />
 
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   <input
                     type="number"
                     min="1"
                     value={notePage}
                     onChange={(e) => setNotePage(e.target.value)}
-                    placeholder="Pagina (opzionale)"
+                    placeholder="Pagina opzionale"
                     className="input-field input-field-boxed"
-                    style={{ width: '180px' }}
+                    style={{ width: 180 }}
                   />
                   <button className="btn-primary" onClick={handleAddNote}>
                     Aggiungi nota
@@ -519,13 +577,13 @@ export default function BookModal({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {notesLoading ? (
-                  <p style={{ fontSize: '14px', color: 'var(--color-text-muted)' }}>
+                  <p style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>
                     Caricamento note...
                   </p>
                 ) : notes.length === 0 ? (
-                  <p style={{ fontSize: '14px', color: 'var(--color-text-muted)' }}>
+                  <p style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>
                     Nessuna nota ancora per questo libro.
                   </p>
                 ) : (
@@ -534,20 +592,41 @@ export default function BookModal({
                       key={note.id}
                       style={{
                         border: '1px solid var(--color-outline-variant)',
-                        borderRadius: '14px',
-                        padding: '14px',
+                        borderRadius: 14,
+                        padding: 14,
                         background: 'var(--color-surface-2)',
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                          alignItems: 'flex-start',
+                        }}
+                      >
                         <div style={{ flex: 1 }}>
-                          {note.page && (
-                            <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--color-primary)', marginBottom: '8px' }}>
+                          {note.page ? (
+                            <p
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: 'var(--color-primary)',
+                                marginBottom: 8,
+                              }}
+                            >
                               Pagina {note.page}
                             </p>
-                          )}
+                          ) : null}
 
-                          <p style={{ fontSize: '14px', lineHeight: 1.7, color: 'var(--color-text)', whiteSpace: 'pre-wrap' }}>
+                          <p
+                            style={{
+                              fontSize: 14,
+                              lineHeight: 1.7,
+                              color: 'var(--color-text)',
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
                             {note.content}
                           </p>
                         </div>
@@ -559,8 +638,8 @@ export default function BookModal({
                             background: 'transparent',
                             color: '#b85c5c',
                             cursor: 'pointer',
-                            fontSize: '13px',
-                            fontWeight: '700',
+                            fontSize: 13,
+                            fontWeight: 700,
                           }}
                         >
                           Elimina
@@ -572,56 +651,75 @@ export default function BookModal({
               </div>
             </div>
 
-            {(book.year || book.pages || book.started_at || book.finished_at || (Array.isArray(book.genres) && book.genres.length > 0)) && (
+            {book.year ||
+            book.pages ||
+            startedAt ||
+            finishedAt ||
+            (Array.isArray(book.genres) && book.genres.length > 0) ? (
               <>
-                <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
+                <hr
+                  style={{
+                    border: 'none',
+                    borderTop: '1px solid var(--color-outline-variant)',
+                    marginBottom: 24,
+                  }}
+                />
 
-                <div style={{ marginBottom: '24px' }}>
-                  <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+                <div style={{ marginBottom: 24 }}>
+                  <p
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      color: 'var(--color-text-muted)',
+                      marginBottom: 10,
+                    }}
+                  >
                     Dettagli
                   </p>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {book.year && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
-                        <span style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Anno</span>
-                        <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: '600' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>Anno</span>
+                        <span style={{ color: 'var(--color-text)', fontSize: 14, fontWeight: 600 }}>
                           {book.year}
                         </span>
                       </div>
                     )}
 
                     {book.pages && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
-                        <span style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Pagine</span>
-                        <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: '600' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>Pagine</span>
+                        <span style={{ color: 'var(--color-text)', fontSize: 14, fontWeight: 600 }}>
                           {book.pages}
                         </span>
                       </div>
                     )}
 
-                    {book.started_at && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
-                        <span style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Iniziato</span>
-                        <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: '600' }}>
-                          {book.started_at}
+                    {startedAt && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>Iniziato</span>
+                        <span style={{ color: 'var(--color-text)', fontSize: 14, fontWeight: 600 }}>
+                          {startedAt}
                         </span>
                       </div>
                     )}
 
-                    {book.finished_at && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
-                        <span style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Finito</span>
-                        <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: '600' }}>
-                          {book.finished_at}
+                    {finishedAt && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>Finito</span>
+                        <span style={{ color: 'var(--color-text)', fontSize: 14, fontWeight: 600 }}>
+                          {finishedAt}
                         </span>
                       </div>
                     )}
 
                     {Array.isArray(book.genres) && book.genres.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <span style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>Generi</span>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>Generi</span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                           {book.genres.map((genre, i) => (
                             <span
                               key={`${genre}-${i}`}
@@ -630,8 +728,8 @@ export default function BookModal({
                                 color: 'var(--color-primary)',
                                 borderRadius: '9999px',
                                 padding: '6px 10px',
-                                fontSize: '12px',
-                                fontWeight: '700',
+                                fontSize: 12,
+                                fontWeight: 700,
                                 lineHeight: 1,
                               }}
                             >
@@ -644,55 +742,70 @@ export default function BookModal({
                   </div>
                 </div>
               </>
-            )}
+            ) : null}
 
-            {book.description && (
+            {book.description ? (
               <>
-                <hr style={{ border: 'none', borderTop: '1px solid var(--color-outline-variant)', marginBottom: '24px' }} />
+                <hr
+                  style={{
+                    border: 'none',
+                    borderTop: '1px solid var(--color-outline-variant)',
+                    marginBottom: 24,
+                  }}
+                />
 
-                <div style={{ marginBottom: '26px' }}>
-                  <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+                <div style={{ marginBottom: 26 }}>
+                  <p
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      color: 'var(--color-text-muted)',
+                      marginBottom: 10,
+                    }}
+                  >
                     Descrizione
                   </p>
 
-                  <p style={{ fontSize: '15px', lineHeight: 1.8, color: 'var(--color-text)' }}>
+                  <p style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--color-text)' }}>
                     {showFullDesc ? book.description : shortDesc}
                   </p>
 
                   {hasMore && (
                     <button
-                      onClick={() => setShowFullDesc(v => !v)}
+                      onClick={() => setShowFullDesc((v) => !v)}
                       style={{
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
                         color: 'var(--color-primary)',
-                        fontSize: '13px',
-                        fontWeight: '700',
-                        marginTop: '10px',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        marginTop: 10,
                         padding: 0,
                         fontFamily: 'var(--font-sans)',
                       }}
                     >
-                      {showFullDesc ? '↑ Mostra meno' : 'Leggi tutto →'}
+                      {showFullDesc ? 'Mostra meno' : 'Leggi tutto'}
                     </button>
                   )}
                 </div>
               </>
-            )}
+            ) : null}
 
             <button
-              onClick={handleRemove}
+              onClick={handleAskRemove}
               style={{
                 width: '100%',
-                padding: '13px',
-                borderRadius: '12px',
+                padding: 13,
+                borderRadius: 12,
                 border: '1.5px solid #f3c7c7',
                 background: 'transparent',
                 color: '#c0392b',
                 fontFamily: 'var(--font-sans)',
-                fontSize: '13px',
-                fontWeight: '700',
+                fontSize: 13,
+                fontWeight: 700,
                 cursor: 'pointer',
               }}
             >
@@ -701,6 +814,17 @@ export default function BookModal({
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showRemoveConfirm}
+        title={`Rimuovere "${book.title}"?`}
+        message="Il libro verrà tolto dalla tua libreria. Le informazioni salvate per questo elemento non saranno più visibili."
+        confirmLabel="Rimuovi libro"
+        cancelLabel="Torna al libro"
+        danger
+        onCancel={() => setShowRemoveConfirm(false)}
+        onConfirm={confirmRemove}
+      />
     </>
   )
 }
